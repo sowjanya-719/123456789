@@ -1,66 +1,44 @@
-// server.js
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
+import * as tf from "@tensorflow/tfjs-node";
+import * as mobilenet from "@tensorflow-models/mobilenet";
 
 const app = express();
-const PORT = process.env.PORT || 5000;
-
 app.use(cors());
 app.use(bodyParser.json({ limit: "10mb" }));
 
-// Utility: mock random result
-function getRandomResult(type) {
-  const options = {
-    leaf: ["✅ Leaf is healthy", "⚠️ Leaf shows signs of disease", "❌ Leaf is damaged"],
-    soil: ["✅ Soil is fertile", "⚠️ Soil needs nutrients", "❌ Soil condition is poor"],
-    pest: ["✅ Low pest risk", "⚠️ Moderate pest risk", "❌ High pest risk detected"],
-  };
-  const arr = options[type];
-  return arr[Math.floor(Math.random() * arr.length)];
+// Load the MobileNet model once at server start
+let model;
+(async () => {
+  console.log("Loading MobileNet...");
+  model = await mobilenet.load();
+  console.log("Model loaded successfully!");
+})();
+
+// Convert base64 to tensor
+function base64ToTensor(base64) {
+  const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ""), "base64");
+  return tf.node.decodeImage(buffer);
 }
 
-// Leaf API
-app.post("/api/leaf", (req, res) => {
+// Leaf Analysis
+app.post("/api/leaf", async (req, res) => {
   const { image } = req.body;
-  if (!image) {
-    return res.status(400).json({ error: "No image provided" });
+  if (!image) return res.status(400).json({ error: "No image provided" });
+
+  try {
+    const tensor = base64ToTensor(image);
+    const predictions = await model.classify(tensor);
+    res.json({ result: predictions[0] }); // top prediction
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to analyze leaf" });
   }
-  // TODO: Replace with ML model in future
-  return res.json({ result: getRandomResult("leaf") });
 });
 
-// Soil API
-app.post("/api/soil", (req, res) => {
-  const { image } = req.body;
-  if (!image) {
-    return res.status(400).json({ error: "No image provided" });
-  }
-  return res.json({ result: getRandomResult("soil") });
-});
+// Root endpoint
+app.get("/", (req, res) => res.send("🌱 Smart Farming Backend Running"));
 
-// Pest API
-app.post("/api/pest", (req, res) => {
-  const { temperature, humidity, lat, lon } = req.body;
-  if (temperature && humidity) {
-    return res.json({
-      result: `Pest risk (Manual): ${getRandomResult("pest")}`,
-      details: { temperature, humidity },
-    });
-  }
-  if (lat && lon) {
-    return res.json({
-      result: `Pest risk (Location): ${getRandomResult("pest")}`,
-      details: { lat, lon },
-    });
-  }
-  return res.status(400).json({ error: "Provide temperature+humidity or location" });
-});
-
-app.get("/", (req, res) => {
-  res.send("🌱 Smart Farming Backend Running");
-});
-
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-});
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
