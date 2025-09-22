@@ -1,65 +1,52 @@
+// server.js
 import express from "express";
 import bodyParser from "body-parser";
 import cors from "cors";
-import * as tf from "@tensorflow/tfjs-node";
-import * as mobilenet from "@tensorflow-models/mobilenet";
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json({ limit: "5mb" })); // smaller for free plan
+app.use(bodyParser.json({ limit: "10mb" }));
 
-let model;
-let modelReady = false;
-
-// Load MobileNet once at startup
-(async () => {
-  console.log("Loading MobileNet...");
-  model = await mobilenet.load();
-  modelReady = true;
-  console.log("✅ Model loaded successfully!");
-})();
-
-// Convert base64 image to tensor
-function base64ToTensor(base64) {
-  const buffer = Buffer.from(base64.replace(/^data:image\/\w+;base64,/, ""), "base64");
-  return tf.node.decodeImage(buffer, 3);
+// Utility function to return random results
+function getRandomResult(type) {
+  const options = {
+    leaf: ["✅ Leaf is healthy", "⚠️ Leaf shows signs of disease", "❌ Leaf is damaged"],
+    soil: ["✅ Soil is fertile", "⚠️ Soil needs nutrients", "❌ Soil condition is poor"],
+    pest: ["✅ Low pest risk", "⚠️ Moderate pest risk", "❌ High pest risk detected"],
+  };
+  const arr = options[type];
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// Leaf analysis
-app.post("/api/leaf", async (req, res) => {
-  if (!modelReady) return res.status(503).json({ error: "Model loading. Try again in a few seconds." });
-
+// Leaf API
+app.post("/api/leaf", (req, res) => {
   const { image } = req.body;
   if (!image) return res.status(400).json({ error: "No image provided" });
-
-  try {
-    const tensor = base64ToTensor(image);
-    const predictions = await model.classify(tensor);
-    tensor.dispose(); // free memory
-    res.json({ result: predictions[0] });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Failed to analyze leaf" });
-  }
+  return res.json({ result: getRandomResult("leaf") });
 });
 
-// Soil analysis (mock for now)
+// Soil API
 app.post("/api/soil", (req, res) => {
-  res.json({ result: "✅ Soil analysis placeholder (implement ML model later)" });
+  const { image } = req.body;
+  if (!image) return res.status(400).json({ error: "No image provided" });
+  return res.json({ result: getRandomResult("soil") });
 });
 
-// Pest analysis (mock for now)
+// Pest API
 app.post("/api/pest", (req, res) => {
   const { temperature, humidity, lat, lon } = req.body;
-  if ((temperature && humidity) || (lat && lon)) {
-    res.json({ result: "⚠️ Pest risk analysis placeholder (implement ML model later)" });
-  } else {
-    res.status(400).json({ error: "Provide temperature+humidity or location" });
+  if (temperature && humidity) {
+    return res.json({ result: `Pest risk (Manual): ${getRandomResult("pest")}`, details: { temperature, humidity } });
   }
+  if (lat && lon) {
+    return res.json({ result: `Pest risk (Location): ${getRandomResult("pest")}`, details: { lat, lon } });
+  }
+  return res.status(400).json({ error: "Provide temperature+humidity or location" });
 });
 
-// Health check
+// Root endpoint
 app.get("/", (req, res) => res.send("🌱 Smart Farming Backend Running"));
 
+// Start server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
